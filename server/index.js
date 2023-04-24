@@ -3,15 +3,15 @@ require('express-async-errors');
 
 //socket modules
 let express = require('express');
-let net = require('net');
-let http = require('http');
-let num_processes = require('os').cpus().length;
-let cluster = require('cluster');
 let socketio = require('socket.io');
-let farmHash = require('farmhash');
-let redisAdapter = require('socket.io-redis');
 let socketMain = require('./socket_main');
 let connectDb = require('./utils/connect_db');
+// let net = require('net');
+// let http = require('http');
+// let num_processes = require('os').cpus().length;
+// let cluster = require('cluster');
+// let farmHash = require('farmhash');
+// let redisAdapter = require('socket.io-redis');
 
 //express modules
 let rateLimiter = require('express-rate-limit');
@@ -35,83 +35,132 @@ let errorHandler = require('./middlewares/error_handler');
 let pageNotFound = require('./middlewares/page_not_found');
 
 
-if (cluster.isMaster) {
+// if (cluster.isMaster) {
     
-    let workers = [];
+//     let workers = [];
     
-    let spawn = function(i) {
-        workers[i] = cluster.fork();
+//     let spawn = function(i) {
+//         workers[i] = cluster.fork();
     
-        workers[i].on('exit', function(code, signal) {
-            spawn(i);
-        });
-    };
+//         workers[i].on('exit', function(code, signal) {
+//             spawn(i);
+//         });
+//     };
     
-    for (var i = 0; i < num_processes; i++) {
-        spawn(i);
+//     for (var i = 0; i < num_processes; i++) {
+//         spawn(i);
+//     }
+    
+//     const worker_index = function(ip, len) {
+//         return farmHash.fingerprint32(ip) % len;
+//     };
+    
+//     const server = net.createServer({ pauseOnConnect: true }, (connection) =>{
+//         let worker = workers[worker_index(connection.remoteAddress, num_processes)];
+//         worker.send('sticky-session:connection', connection);
+//     });
+//     server.listen(process.env.PORT, () => console.log(`master is listening on port ${process.env.PORT}...`));
+
+// } else {
+
+//     let app = express();
+
+//     app.set('trust proxy', 1);
+//     app.use(rateLimiter({
+//         windowMs : 15 * 60 * 1000,
+//         max : 60
+//     }));
+//     app.use(cors());
+//     app.use(helmet());
+//     app.use(xss_clean());
+//     app.use(mongoSanitize());
+
+//     app.use(express.json());
+//     app.use(express.static('./public'));
+//     app.use(cookieParser(process.env.JWT_SECRET));
+//     app.use(fileUpload({ useTempFiles : true }));
+
+//     app.use('/apis/v1/auth', authRouter);
+//     app.use('/apis/v1/users', userRouter);
+
+//     app.use(pageNotFound);
+//     app.use(errorHandler);
+
+//     let server = app.listen(0, 'localhost');
+//     console.log(`worker ${cluster.worker.id} is listening`);
+
+//     let start = async () => {
+//         try {
+//             await connectDb(process.env.MONGO_URI);
+//             console.log('connected to db');
+//         } catch (error) {
+//             console.log(error)
+//         }
+//     }
+//     start();
+
+//     let io = socketio(server, {
+//         cors : { origin : process.env.ORIGIN }
+//     });
+//     io.adapter(redisAdapter({ host : 'localhost', port : 6379 }));
+
+//     io.on('connection', socket => {
+//         socketMain(io, socket);
+//     })
+
+//     process.on('message', (message, connection) => {
+//         if (message !== 'sticky-session:connection') return;
+
+//         server.emit('connection', connection);
+//         connection.resume();
+//     })
+// }
+
+
+let app = express();
+
+app.set('trust proxy', 1);
+app.use(rateLimiter({
+    windowMs : 15 * 60 * 1000,
+    max : 60
+}));
+app.use(cors({
+    origin: '*'
+}));
+app.use(helmet());
+app.use(xss_clean());
+app.use(mongoSanitize());
+
+app.use(express.json());
+app.use(express.static('./public'));
+app.use(cookieParser(process.env.JWT_SECRET));
+app.use(fileUpload({ useTempFiles : true }));
+
+app.use('/apis/v1/auth', authRouter);
+app.use('/apis/v1/users', userRouter);
+
+app.use(pageNotFound);
+app.use(errorHandler);
+
+//port---------------------------
+let port = process.env.PORT || 5005
+
+//start the app------------------
+let server = app.listen(port, () => console.log(`server is listening on ${port}...`))
+let start = async () => {
+    try {
+        await connectDb(process.env.MONGO_URI);
+        console.log('connected to db');
+    } catch (error) {
+        console.log(error)
     }
-    
-    const worker_index = function(ip, len) {
-        return farmHash.fingerprint32(ip) % len;
-    };
-    
-    const server = net.createServer({ pauseOnConnect: true }, (connection) =>{
-        let worker = workers[worker_index(connection.remoteAddress, num_processes)];
-        worker.send('sticky-session:connection', connection);
-    });
-    server.listen(process.env.PORT, () => console.log(`master is listening on port ${process.env.PORT}...`));
-
-} else {
-
-    let app = express();
-
-    app.set('trust proxy', 1);
-    app.use(rateLimiter({
-        windowMs : 15 * 60 * 1000,
-        max : 60
-    }));
-    app.use(cors());
-    app.use(helmet());
-    app.use(xss_clean());
-    app.use(mongoSanitize());
-
-    app.use(express.json());
-    app.use(express.static('./public'));
-    app.use(cookieParser(process.env.JWT_SECRET));
-    app.use(fileUpload({ useTempFiles : true }));
-
-    app.use('/apis/v1/auth', authRouter);
-    app.use('/apis/v1/users', userRouter);
-
-    app.use(pageNotFound);
-    app.use(errorHandler);
-
-    let server = app.listen(0, 'localhost');
-    console.log(`worker ${cluster.worker.id} is listening`);
-
-    let start = async () => {
-        try {
-            await connectDb(process.env.MONGO_URI);
-            console.log('connected to db');
-        } catch (error) {
-            console.log(error)
-        }
-    }
-    start();
-
-    let io = socketio(server, {
-        cors : { origin : process.env.ORIGIN }
-    });
-    io.adapter(redisAdapter({ host : 'localhost', port : 6379 }));
-
-    io.on('connection', socket => {
-        socketMain(io, socket);
-    })
-
-    process.on('message', (message, connection) => {
-        if (message !== 'sticky-session:connection') return;
-
-        server.emit('connection', connection);
-        connection.resume();
-    })
 }
+start();
+//start the socket---------------
+let io = socketio(server, {
+    cors : { origin : process.env.CLIENT }
+})
+
+io.on('connection', socket => {
+    socketMain(io, socket);
+})
